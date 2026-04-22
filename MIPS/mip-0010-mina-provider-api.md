@@ -688,15 +688,13 @@ The specification intentionally standardizes only a compact set of widely needed
 
 ## Backwards Compatibility
 
-This MIP is not fully backwards compatible with provider implementations that only support positional-array `params` for the standardized methods defined here. It also adds a required `type` field to both `mina_signTransaction` and `mina_sendTransaction`, which means dApps written against the earlier draft proposal will need to update their request construction.
+The current APIs of Auro Wallet, Pallad, and [RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) have been taken into consideration to minimize required changes and ensure a smooth transition and implementation.
 
-These incompatibilities are limited to the wallet-provider interface and do not introduce a Mina protocol or consensus change.
+Current wallets MAY continue to support both this standard and their existing formats during a transition period, allowing zkApps to incrementally adopt the standardized interface defined in this MIP.
 
-To ease migration:
+Libraries and abstraction layers MAY be used to bridge differences between wallet implementations and provide a consistent developer experience. For example, tools such as [wagmina](https://github.com/wagmina/wagmina) can normalize provider behavior across wallets, as demonstrated in projects like [Scaffold Mina](https://github.com/wagmina/scaffold-mina).
 
-- Wallets MAY temporarily support both legacy array-based requests and the object-based format defined in this MIP.
-- Wallets MAY infer transaction type for legacy callers, but MIP-compliant dApps MUST send the `type` field explicitly for both `mina_signTransaction` and `mina_sendTransaction`.
-- Libraries that abstract wallet differences SHOULD normalize legacy wallet behavior to the object-based format defined by this MIP.
+This MIP does not introduce any protocol-level or consensus changes and is limited to standardizing the wallet-provider interface.
 
 ## Security Considerations
 
