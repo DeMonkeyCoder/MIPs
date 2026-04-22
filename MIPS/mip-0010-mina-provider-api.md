@@ -12,7 +12,7 @@ created: 2026-04-22
 
 ## Abstract
 
-This MIP standardizes a Mina Provider API for wallets, account providers, and public providers used by zkApp frontends. The API follows an EIP-1193-style `request` interface and defines a common set of RPC methods and events so applications can integrate with Mina providers through one interoperable surface. In contrast to the earlier proposal version, this MIP standardizes JSON-RPC `params` as named objects rather than positional arrays, and it requires `mina_sendTransaction` requests to include a `type` field identifying whether the transaction is a `payment`, `delegation`, or `zkapp` transaction.
+This MIP standardizes a Mina Provider API for wallets, account providers, and public providers used by zkApp frontends. The API follows an EIP-1193-style `request` interface and defines a common set of RPC methods and events so applications can integrate with Mina providers through one interoperable surface. In contrast to the earlier proposal version, this MIP standardizes JSON-RPC `params` as named objects rather than positional arrays, and it requires both `mina_signTransaction` and `mina_sendTransaction` requests to include a `type` field identifying whether the transaction is a `payment`, `delegation`, or `zkapp` transaction.
 
 ## Motivation
 
@@ -25,7 +25,7 @@ A standard provider API improves interoperability between wallets and applicatio
 - standardizing named-object `params` for all methods;
 - using `networkId` terminology instead of `chainId` to match current Mina wallet conventions;
 - including explicit account connection and revocation methods; and
-- requiring a `type` discriminator on `mina_sendTransaction` payloads so providers can reliably distinguish `payment`, `delegation`, and `zkapp` flows.
+- requiring a `type` discriminator on `mina_signTransaction` and `mina_sendTransaction` payloads so providers can reliably distinguish `payment`, `delegation`, and `zkapp` flows.
 
 These constraints reduce ambiguity for implementers and simplify multichain and multi-wallet support for Mina applications.
 
@@ -141,10 +141,10 @@ interface ZkappTransactionPayload {
 
 This MIP does not prescribe the full internal schema of a zkApp transaction. Wallets and libraries MAY use their existing serialized zkApp command representation, provided that the payload is carried inside the object format required by this MIP.
 
-#### SendTransactionParams
+#### SignableTransactionParams
 
 ```ts
-type SendTransactionParams =
+type SignableTransactionParams =
   | {
       readonly type: 'payment';
       readonly transaction: PaymentTransactionPayload;
@@ -159,7 +159,7 @@ type SendTransactionParams =
     };
 ```
 
-The `type` field is REQUIRED for `mina_sendTransaction` and determines how the provider interprets the accompanying `transaction` payload.
+The `type` field is REQUIRED for both `mina_signTransaction` and `mina_sendTransaction` and determines how the provider interprets the accompanying `transaction` payload.
 
 #### SignedTransactionParams
 
@@ -468,19 +468,20 @@ Requests that the wallet sign a transaction without sending it.
 
 ##### Parameters
 
-`SignedTransactionParams`
+`SignableTransactionParams`
 
 ##### Returns
 
 A wallet-defined signed transaction representation, such as a signature for payments and delegations or a signed zkApp command for zkApp transactions.
 
-##### Example
+##### Example: payment
 
 ```json
 // Request
 {
   "method": "mina_signTransaction",
   "params": {
+    "type": "payment",
     "transaction": {
       "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
       "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
@@ -502,13 +503,69 @@ A wallet-defined signed transaction representation, such as a signature for paym
 }
 ```
 
+##### Example: delegation
+
+```json
+// Request
+{
+  "method": "mina_signTransaction",
+  "params": {
+    "type": "delegation",
+    "transaction": {
+      "to": "B62qdelegate...",
+      "from": "B62qdelegator...",
+      "fee": "100000000",
+      "nonce": "12",
+      "memo": "Delegate stake",
+      "validUntil": "4294967295"
+    }
+  }
+}
+
+// Response
+{
+  "result": {
+    "field": "2270917456437054151866310845889777237190541188364956508055930611671093285487",
+    "scalar": "21449516654198770916732742168324673178939547645509705487897779421915836159965"
+  }
+}
+```
+
+##### Example: zkapp
+
+```json
+// Request
+{
+  "method": "mina_signTransaction",
+  "params": {
+    "type": "zkapp",
+    "transaction": {
+      "transaction": {
+        "zkappCommand": "..."
+      },
+      "feePayer": {
+        "fee": "100000000",
+        "memo": "Execute zkApp"
+      }
+    }
+  }
+}
+
+// Response
+{
+  "result": {
+    "signedZkappCommand": "..."
+  }
+}
+```
+
 #### `mina_sendTransaction`
 
 Requests that the wallet sign and send a transaction.
 
 ##### Parameters
 
-`SendTransactionParams`
+`SignableTransactionParams`
 
 ##### Returns
 
@@ -658,7 +715,7 @@ A Provider implementation claiming compliance with this MIP:
 
 - MUST support object-form `params` for all standardized methods.
 - MUST accept omitted `params` or an empty object for methods with no parameters.
-- MUST expose `mina_sendTransaction` with a REQUIRED `type` field in `params`.
+- MUST expose both `mina_signTransaction` and `mina_sendTransaction` with a REQUIRED `type` field in `params`.
 - MUST preserve the semantics of transaction submission across supported transaction types.
 - SHOULD continue to expose non-standard legacy methods only for backwards compatibility and SHOULD document them separately from this MIP-compliant interface.
 
@@ -670,9 +727,9 @@ JSON-RPC 2.0 permits parameters to be encoded either by position or by name. Thi
 
 Using objects avoids ambiguity in methods that have optional fields, reduces coupling to argument order, and makes it easier for providers to extend internal validation without introducing incompatible positional conventions.
 
-### Explicit `type` for `mina_sendTransaction`
+### Explicit `type` for transaction signing and sending
 
-`mina_sendTransaction` covers materially different flows: payments, delegations, and zkApp transactions. Requiring a `type` discriminator makes the transaction intent explicit, avoids inference from partially overlapping payload fields, and improves cross-wallet consistency. This is especially useful for multichain or multi-wallet libraries that need deterministic transaction routing and validation behavior.
+`mina_signTransaction` and `mina_sendTransaction` cover materially different flows: payments, delegations, and zkApp transactions. Requiring a `type` discriminator makes transaction intent explicit, avoids inference from partially overlapping payload fields, and improves cross-wallet consistency. This is especially useful for multichain or multi-wallet libraries that need deterministic transaction routing and validation behavior before either signing or submission.
 
 ### Use of `networkId`
 
@@ -684,14 +741,14 @@ The specification intentionally standardizes only a compact set of widely needed
 
 ## Backwards Compatibility
 
-This MIP is not fully backwards compatible with provider implementations that only support positional-array `params` for the standardized methods defined here. It also adds a required `type` field to `mina_sendTransaction`, which means dApps written against the earlier draft proposal will need to update their request construction.
+This MIP is not fully backwards compatible with provider implementations that only support positional-array `params` for the standardized methods defined here. It also adds a required `type` field to both `mina_signTransaction` and `mina_sendTransaction`, which means dApps written against the earlier draft proposal will need to update their request construction.
 
 These incompatibilities are limited to the wallet-provider interface and do not introduce a Mina protocol or consensus change.
 
 To ease migration:
 
 - Wallets MAY temporarily support both legacy array-based requests and the object-based format defined in this MIP.
-- Wallets MAY infer transaction type for legacy callers, but MIP-compliant dApps MUST send the `type` field explicitly for `mina_sendTransaction`.
+- Wallets MAY infer transaction type for legacy callers, but MIP-compliant dApps MUST send the `type` field explicitly for both `mina_signTransaction` and `mina_sendTransaction`.
 - Libraries that abstract wallet differences SHOULD normalize legacy wallet behavior to the object-based format defined by this MIP.
 
 ## Test Cases
@@ -700,15 +757,16 @@ Conformance testing for this MIP SHOULD include at least the following cases:
 
 1. **No-parameter methods**: verify that methods such as `mina_accounts` and `mina_networkId` succeed when `params` is omitted and when `params` is `{}`.
 2. **Named-parameter methods**: verify that `mina_getBalance`, `mina_getTransactionCount`, `mina_addChain`, and `mina_switchChain` accept object-form `params` and reject malformed parameter types.
-3. **Transaction submission by type**: verify that `mina_sendTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate transaction payload.
-4. **Missing type**: verify that `mina_sendTransaction` rejects requests that omit `type`.
-5. **Unsupported type**: verify that `mina_sendTransaction` rejects values outside `payment`, `delegation`, and `zkapp`.
-6. **Legacy compatibility behavior**: if a wallet chooses to support legacy array-form requests during migration, verify that the legacy behavior is clearly separated from the MIP-compliant interface and does not change the semantics of compliant object-form requests.
-7. **Event emission**: verify that account and network changes emit `accountsChanged` and `chainChanged` respectively with the correct payload shapes.
+3. **Transaction signing by type**: verify that `mina_signTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate transaction payload.
+4. **Transaction submission by type**: verify that `mina_sendTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate transaction payload.
+5. **Missing type**: verify that both `mina_signTransaction` and `mina_sendTransaction` reject requests that omit `type`.
+6. **Unsupported type**: verify that both methods reject values outside `payment`, `delegation`, and `zkapp`.
+7. **Legacy compatibility behavior**: if a wallet chooses to support legacy array-form requests during migration, verify that the legacy behavior is clearly separated from the MIP-compliant interface and does not change the semantics of compliant object-form requests.
+8. **Event emission**: verify that account and network changes emit `accountsChanged` and `chainChanged` respectively with the correct payload shapes.
 
 ## Reference Implementation
 
-The original proposal references the Vimina TypeScript schema as a starting point for the provider surface. A reference implementation can be derived by updating that schema so that all standardized methods use named-object `params`, and by changing `mina_sendTransaction` to require a `type` field alongside the transaction payload.
+The original proposal references the Vimina TypeScript schema as a starting point for the provider surface. A reference implementation can be derived by updating that schema so that all standardized methods use named-object `params`, and by changing both `mina_signTransaction` and `mina_sendTransaction` to require a `type` field alongside the transaction payload.
 
 Relevant sources include:
 
@@ -728,7 +786,7 @@ Wallets and providers implementing this MIP SHOULD ensure that:
 - permissioned methods such as `mina_requestAccounts`, `mina_signTransaction`, `mina_sendTransaction`, and `wallet_revokePermissions` are gated by explicit user authorization;
 - providers do not expose private key material or other sensitive wallet state to the dApp environment.
 
-The `type` discriminator on `mina_sendTransaction` reduces one class of implementation risk by preventing ambiguous transaction interpretation. However, wallets MUST NOT rely on `type` alone; they MUST also validate the transaction body against the rules for the declared type.
+The `type` discriminator on `mina_signTransaction` and `mina_sendTransaction` reduces one class of implementation risk by preventing ambiguous transaction interpretation. However, wallets MUST NOT rely on `type` alone; they MUST also validate the transaction body against the rules for the declared type.
 
 ## Copyright
 
