@@ -20,12 +20,14 @@ The specification in this proposal is intentionally brief, including only the ne
 
 Mina wallets and provider implementations currently expose different JavaScript APIs, which forces zkApp developers to maintain wallet-specific integration code. This fragmentation increases implementation effort, testing overhead, and the chance of inconsistent behavior across applications.
 
-[RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) established a useful starting point for provider standardization by defining a minimal Mina Provider API. This MIP narrows and extends that approach for Mina wallet interoperability by:
+[RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) established a useful starting point for provider standardization by defining a minimal Mina Provider API. However, it leaves several areas underspecified for real-world wallet interoperability, including:
 
-- using `networkId` terminology instead of `chainId` to match current Mina wallet conventions;
-- including explicit account connection and revocation methods.
+- lack of clear conventions for consistent request parameter structures across implementations;
+- absence of standardized methods for account connection and permission revocation;
+- ambiguity in naming and network identification (e.g., `chainId` vs existing Mina conventions);
+- insufficient guidance for handling different transaction types in a uniform way.
 
-These constraints reduce ambiguity for implementers and simplify multichain and multi-wallet support for Mina applications.
+These gaps lead to divergent implementations across wallets and increase the burden on application developers integrating with multiple providers.
 
 ## Specification
 
