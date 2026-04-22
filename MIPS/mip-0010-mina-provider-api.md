@@ -14,13 +14,15 @@ created: 2026-04-22
 
 This MIP standardizes a Mina Provider API for wallets, account providers, and public providers used by zkApp frontends. The API follows an EIP-1193-style `request` interface and defines a common set of RPC methods and events so applications can integrate with Mina providers through one interoperable surface. This MIP introduces a standardized JSON-RPC interface and a typed transaction submission flow for Mina providers.
 
+The specification in this proposal is intentionally brief, including only the necessary methods and events to facilitate easy adoption. Once current Mina wallets adopt this specification, more elaborate extensions can be designed in the future.
+
 ## Motivation
 
 Mina wallets and provider implementations currently expose different JavaScript APIs, which forces zkApp developers to maintain wallet-specific integration code. This fragmentation increases implementation effort, testing overhead, and the chance of inconsistent behavior across applications.
 
 A standard provider API improves interoperability between wallets and applications, lowers the barrier for new wallet implementations, and gives developers a predictable interface for common tasks such as connecting accounts, querying network state, signing transactions, and submitting transactions.
 
-[RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) established a useful starting point for provider standardization by defining an EIP-1193-inspired Provider API and permitting JSON-RPC requests to use either arrays or objects for `params`. This MIP narrows and extends that approach for Mina wallet interoperability by:
+[RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) established a useful starting point for provider standardization by defining a minimal Mina Provider API. This MIP narrows and extends that approach for Mina wallet interoperability by:
 
 - using `networkId` terminology instead of `chainId` to match current Mina wallet conventions;
 - including explicit account connection and revocation methods.
@@ -55,7 +57,7 @@ interface MinaProvider {
 }
 ```
 
-`request` MUST accept a `method` string and MAY accept a `params` object. If a method takes no parameters, the `params` property MAY be omitted or provided as an empty object. Providers MUST NOT require positional-array parameters for methods standardized by this MIP.
+`request` MUST accept a `method` string and MAY accept a `params` object. If a method takes no parameters, the `params` property MAY be omitted or provided as an empty object.
 
 ### RPC Conventions
 
@@ -77,14 +79,6 @@ interface ProviderRpcError extends Error {
   data?: unknown;
 }
 ```
-
-Providers SHOULD use the following codes where applicable:
-
-- `4001`: User rejected request
-- `4100`: Unauthorized
-- `4200`: Unsupported method
-- `4900`: Disconnected
-- `4901`: Network disconnected
 
 ### Common Types
 
