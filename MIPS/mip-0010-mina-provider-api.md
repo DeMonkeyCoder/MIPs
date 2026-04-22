@@ -1,7 +1,7 @@
 ---
 mip: MIP10
 title: Mina Provider API
-description: This MIP standardizes a wallet and public-provider API for Mina applications using JSON-RPC request objects and a typed transaction submission flow.
+description: This MIP standardizes a wallet and public-provider API for Mina applications by defining a unified JSON-RPC request interface.
 authors: TheMonkeyCoder
 discussions-to: https://forums.minaprotocol.com/t/mip-proposal-mina-provider-api/7033/
 status: Draft
