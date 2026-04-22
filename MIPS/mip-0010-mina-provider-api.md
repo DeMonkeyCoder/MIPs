@@ -125,33 +125,28 @@ interface DelegationTransactionPayload {
 
 ```ts
 interface ZkappTransactionPayload {
-  readonly transaction: Record<string, unknown>;
-  readonly feePayer?: Record<string, unknown>;
-  readonly memo?: string;
+  readonly zkappCommand: Record<string, unknown>;
 }
 ```
 
-This MIP does not prescribe the full internal schema of a zkApp transaction. Wallets and libraries MAY use their existing serialized zkApp command representation, provided that the payload is carried inside the object format required by this MIP.
+This MIP does not prescribe the full internal schema of a `zkappCommand`. Implementers are advised to look to `o1js` for a reference representation of the `ZkappCommand` object.
 
-#### SignableTransactionParams
+#### TransactionRequest
 
 ```ts
-type SignableTransactionParams =
-  | {
+type TransactionRequest =
+  | ({
       readonly type: 'payment';
-      readonly transaction: PaymentTransactionPayload;
-    }
-  | {
+    } & PaymentTransactionPayload)
+  | ({
       readonly type: 'delegation';
-      readonly transaction: DelegationTransactionPayload;
-    }
-  | {
+    } & DelegationTransactionPayload)
+  | ({
       readonly type: 'zkapp';
-      readonly transaction: ZkappTransactionPayload;
-    };
+    } & ZkappTransactionPayload);
 ```
 
-The `type` field is REQUIRED for both `mina_signTransaction` and `mina_sendTransaction` and determines how the provider interprets the accompanying `transaction` payload.
+The `type` field is REQUIRED for both `mina_signTransaction` and `mina_sendTransaction` and determines how the provider interprets the accompanying request payload.
 
 #### SignedTransactionParams
 
@@ -460,7 +455,7 @@ Requests that the wallet sign a transaction without sending it.
 
 ##### Parameters
 
-`SignableTransactionParams`
+`TransactionRequest`
 
 ##### Returns
 
@@ -474,15 +469,13 @@ A wallet-defined signed transaction representation, such as a signature for paym
   "method": "mina_signTransaction",
   "params": {
     "type": "payment",
-    "transaction": {
-      "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
-      "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
-      "fee": "10000000",
-      "amount": "1000000000",
-      "nonce": "33",
-      "memo": "Offline Payment",
-      "validUntil": "4294967295"
-    }
+    "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
+    "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
+    "fee": "10000000",
+    "amount": "1000000000",
+    "nonce": "33",
+    "memo": "Offline Payment",
+    "validUntil": "4294967295"
   }
 }
 
@@ -503,14 +496,12 @@ A wallet-defined signed transaction representation, such as a signature for paym
   "method": "mina_signTransaction",
   "params": {
     "type": "delegation",
-    "transaction": {
-      "to": "B62qdelegate...",
-      "from": "B62qdelegator...",
-      "fee": "100000000",
-      "nonce": "12",
-      "memo": "Delegate stake",
-      "validUntil": "4294967295"
-    }
+    "to": "B62qdelegate...",
+    "from": "B62qdelegator...",
+    "fee": "100000000",
+    "nonce": "12",
+    "memo": "Delegate stake",
+    "validUntil": "4294967295"
   }
 }
 
@@ -531,14 +522,8 @@ A wallet-defined signed transaction representation, such as a signature for paym
   "method": "mina_signTransaction",
   "params": {
     "type": "zkapp",
-    "transaction": {
-      "transaction": {
-        "zkappCommand": "..."
-      },
-      "feePayer": {
-        "fee": "100000000",
-        "memo": "Execute zkApp"
-      }
+    "zkappCommand": {
+      "...": "..."
     }
   }
 }
@@ -557,7 +542,7 @@ Requests that the wallet sign and send a transaction.
 
 ##### Parameters
 
-`SignableTransactionParams`
+`TransactionRequest`
 
 ##### Returns
 
@@ -597,14 +582,12 @@ Requests that the wallet sign and send a transaction.
   "method": "mina_sendTransaction",
   "params": {
     "type": "delegation",
-    "transaction": {
-      "to": "B62qdelegate...",
-      "from": "B62qdelegator...",
-      "fee": "100000000",
-      "nonce": "12",
-      "memo": "Delegate stake",
-      "validUntil": "4294967295"
-    }
+    "to": "B62qdelegate...",
+    "from": "B62qdelegator...",
+    "fee": "100000000",
+    "nonce": "12",
+    "memo": "Delegate stake",
+    "validUntil": "4294967295"
   }
 }
 
@@ -622,14 +605,8 @@ Requests that the wallet sign and send a transaction.
   "method": "mina_sendTransaction",
   "params": {
     "type": "zkapp",
-    "transaction": {
-      "transaction": {
-        "zkappCommand": "..."
-      },
-      "feePayer": {
-        "fee": "100000000",
-        "memo": "Execute zkApp"
-      }
+    "zkappCommand": {
+      "...": "..."
     }
   }
 }
@@ -747,22 +724,12 @@ Conformance testing for this MIP SHOULD include at least the following cases:
 
 1. **No-parameter methods**: verify that methods such as `mina_accounts` and `mina_networkId` succeed when `params` is omitted and when `params` is `{}`.
 2. **Named-parameter methods**: verify that `mina_getBalance`, `mina_getTransactionCount`, `mina_addChain`, and `mina_switchChain` accept object-form `params` and reject malformed parameter types.
-3. **Transaction signing by type**: verify that `mina_signTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate transaction payload.
-4. **Transaction submission by type**: verify that `mina_sendTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate transaction payload.
+3. **Transaction signing by type**: verify that `mina_signTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate request shape.
+4. **Transaction submission by type**: verify that `mina_sendTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate request shape.
 5. **Missing type**: verify that both `mina_signTransaction` and `mina_sendTransaction` reject requests that omit `type`.
 6. **Unsupported type**: verify that both methods reject values outside `payment`, `delegation`, and `zkapp`.
 7. **Legacy compatibility behavior**: if a wallet chooses to support legacy array-form requests during migration, verify that the legacy behavior is clearly separated from the MIP-compliant interface and does not change the semantics of compliant object-form requests.
 8. **Event emission**: verify that account and network changes emit `accountsChanged` and `chainChanged` respectively with the correct payload shapes.
-
-## Reference Implementation
-
-The original proposal references the Vimina TypeScript schema as a starting point for the provider surface. A reference implementation can be derived by updating that schema so that all standardized methods use named-object `params`, and by changing both `mina_signTransaction` and `mina_sendTransaction` to require a `type` field alongside the transaction payload.
-
-Relevant sources include:
-
-- Vimina provider schema: `src/types/jsApiStandard.ts`
-- Existing wallet implementations such as Auro Wallet and Pallad
-- The original proposal and discussion thread for this MIP
 
 ## Security Considerations
 
@@ -771,7 +738,7 @@ Provider objects are exposed in an untrusted JavaScript environment and MUST be 
 Wallets and providers implementing this MIP SHOULD ensure that:
 
 - all request payloads are validated before processing;
-- transaction payloads are validated against the declared `type` and rejected if fields are inconsistent;
+- transaction requests are validated against the declared `type` and rejected if fields are inconsistent;
 - unsupported methods and malformed parameters fail predictably rather than being silently coerced;
 - permissioned methods such as `mina_requestAccounts`, `mina_signTransaction`, `mina_sendTransaction`, and `wallet_revokePermissions` are gated by explicit user authorization;
 - providers do not expose private key material or other sensitive wallet state to the dApp environment.
