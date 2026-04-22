@@ -1,345 +1,331 @@
-# MIP Proposal: Mina Provider API
+---
+mip: MIP10
+title: Mina Provider API
+description: This MIP standardizes a wallet and public-provider API for Mina applications using JSON-RPC request objects and a typed transaction submission flow.
+authors: TheMonkeyCoder
+discussions-to: https://forums.minaprotocol.com/t/mip-proposal-mina-provider-api/7033/
+status: Draft
+type: Standards Track
+category: Interface
+created: 2026-04-22
+---
 
-This proposal introduces a standardized Provider API for Mina Protocol wallets, account providers, and public providers. The goal is to establish a consistent interface for zkApp developers to interact with user accounts, inspired by the widely adopted EIP-1193 and EIP-1474 standards in Ethereum.
+## Abstract
 
-The specification in this proposal is intentionally brief, including only the necessary methods and events to facilitate easy adoption. Once current Mina wallets adopt this specification, more elaborate extensions can be designed in the future.
+This MIP standardizes a Mina Provider API for wallets, account providers, and public providers used by zkApp frontends. The API follows an EIP-1193-style `request` interface and defines a common set of RPC methods and events so applications can integrate with Mina providers through one interoperable surface. In contrast to the earlier proposal version, this MIP standardizes JSON-RPC `params` as named objects rather than positional arrays, and it requires `mina_sendTransaction` requests to include a `type` field identifying whether the transaction is a `payment`, `delegation`, or `zkapp` transaction.
 
-Auro Wallet currently uses an object format for `params` instead of the array format. While the object format is valid according to the JSON-RPC 2.0 Specification, this proposal uses the array format because it aligns with the conventions of other major blockchains, making it easier for multichain wallets to support.
+## Motivation
 
-# Motivation
+Mina wallets and provider implementations currently expose different JavaScript APIs, which forces zkApp developers to maintain wallet-specific integration code. This fragmentation increases implementation effort, testing overhead, and the chance of inconsistent behavior across applications.
 
-Currently, major Mina wallets such as Auro Wallet and Pallad expose differing JavaScript Provider APIs, requiring zkApp developers to maintain separate integration code for each wallet. This fragmentation increases development complexity, testing overhead, and the risk of bugs.
+A standard provider API improves interoperability between wallets and applications, lowers the barrier for new wallet implementations, and gives developers a predictable interface for common tasks such as connecting accounts, querying network state, signing transactions, and submitting transactions.
 
-Furthermore, without a defined standard, new wallet or account provider developers may introduce additional incompatible APIs, worsening the issue and hindering ecosystem growth.
+[RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) established a useful starting point for provider standardization by defining an EIP-1193-inspired Provider API and permitting JSON-RPC requests to use either arrays or objects for `params`. This MIP narrows and extends that approach for Mina wallet interoperability by:
 
-A unified standard would:
+- standardizing named-object `params` for all methods;
+- using `networkId` terminology instead of `chainId` to match current Mina wallet conventions;
+- including explicit account connection and revocation methods; and
+- requiring a `type` discriminator on `mina_sendTransaction` payloads so providers can reliably distinguish `payment`, `delegation`, and `zkapp` flows.
 
-- Enable seamless multi-wallet support for zkApps.
-- Provide clear guidance for new wallet implementations.
-- Reduce developer friction and accelerate zkApp adoption.
-- Facilitate better user experiences, such as easy wallet switching.
-
-[RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) already exists but has some flaws that can be improved, such as:
-
-- Lack of methods for connecting and disconnecting the wallet.
-- Use of `chainId` instead of `networkId` (the term used in both Auro Wallet and Pallad), and referring to it as a hexadecimal value while Mina's network ID is a string.
-
-# Proposal
-
-We propose the formal adoption of the **Mina Provider API**, an EIP-1193-style provider with methods as defined below.
-
-The provider implements:
-
-- `request(args: { method: string; params?: array }): Promise<unknown>`
-- Event subscription via `on(eventName: string, listener: Function): void` and `removeListener(eventName: string, listener: Function): void`
-
-All methods use positional parameters (array format) as per JSON-RPC conventions adopted by major providers.
+These constraints reduce ambiguity for implementers and simplify multichain and multi-wallet support for Mina applications.
 
 ## Specification
 
+The key words “MUST”, “MUST NOT”, “REQUIRED”, “SHALL”, “SHALL NOT”, “SHOULD”, “SHOULD NOT”, “RECOMMENDED”, “MAY”, and “OPTIONAL” in this document are to be interpreted as described in RFC 2119.
+
+### Definitions
+
+- **Provider**: A JavaScript object exposed to an application and capable of processing Mina RPC requests.
+- **Wallet Provider**: A Provider that can access user accounts and perform user-authorized actions such as signing or sending transactions.
+- **Public Provider**: A Provider that serves read-only network methods without requiring access to user accounts.
+- **dApp**: A frontend or application that consumes the Provider.
+
+### Provider Interface
+
+A compliant Provider MUST implement the following methods:
+
+```ts
+interface RequestArguments {
+  readonly method: string;
+  readonly params?: Record<string, unknown>;
+}
+
+interface MinaProvider {
+  request(args: RequestArguments): Promise<unknown>;
+  on(eventName: string, listener: (...args: any[]) => void): void;
+  removeListener(eventName: string, listener: (...args: any[]) => void): void;
+}
+```
+
+`request` MUST accept a `method` string and MAY accept a `params` object. If a method takes no parameters, the `params` property MAY be omitted or provided as an empty object. Providers MUST NOT require positional-array parameters for methods standardized by this MIP.
+
+### RPC Conventions
+
+All methods defined by this MIP are invoked through `request`.
+
+- Method names MUST be unique strings.
+- Method names standardized by this MIP MUST be implemented with the exact names defined below.
+- Standardized methods that take inputs MUST receive those inputs as a JSON object in `params`.
+- Providers MAY implement additional non-standard methods, but such methods SHOULD NOT conflict with names standardized by this MIP.
+
+### Error Handling
+
+Providers SHOULD reject failed requests with an error object compatible with the following shape:
+
+```ts
+interface ProviderRpcError extends Error {
+  message: string;
+  code: number;
+  data?: unknown;
+}
+```
+
+Providers SHOULD use the following codes where applicable:
+
+- `4001`: User rejected request
+- `4100`: Unauthorized
+- `4200`: Unsupported method
+- `4900`: Disconnected
+- `4901`: Network disconnected
+
+### Common Types
+
+#### NetworkId
+
+A `NetworkId` is a string identifier for the active Mina network, for example `mina:mainnet` or `mina:devnet`.
+
+#### TransactionType
+
+```ts
+type TransactionType = 'payment' | 'delegation' | 'zkapp';
+```
+
+#### PaymentTransactionPayload
+
+```ts
+interface PaymentTransactionPayload {
+  readonly to: string;
+  readonly from?: string;
+  readonly fee: string;
+  readonly amount: string;
+  readonly nonce?: string;
+  readonly memo?: string;
+  readonly validUntil?: string;
+}
+```
+
+#### DelegationTransactionPayload
+
+```ts
+interface DelegationTransactionPayload {
+  readonly to: string;
+  readonly from?: string;
+  readonly fee: string;
+  readonly nonce?: string;
+  readonly memo?: string;
+  readonly validUntil?: string;
+}
+```
+
+`to` is the delegate public key.
+
+#### ZkappTransactionPayload
+
+```ts
+interface ZkappTransactionPayload {
+  readonly transaction: Record<string, unknown>;
+  readonly feePayer?: Record<string, unknown>;
+  readonly memo?: string;
+}
+```
+
+This MIP does not prescribe the full internal schema of a zkApp transaction. Wallets and libraries MAY use their existing serialized zkApp command representation, provided that the payload is carried inside the object format required by this MIP.
+
+#### SendTransactionParams
+
+```ts
+type SendTransactionParams =
+  | {
+      readonly type: 'payment';
+      readonly transaction: PaymentTransactionPayload;
+    }
+  | {
+      readonly type: 'delegation';
+      readonly transaction: DelegationTransactionPayload;
+    }
+  | {
+      readonly type: 'zkapp';
+      readonly transaction: ZkappTransactionPayload;
+    };
+```
+
+The `type` field is REQUIRED for `mina_sendTransaction` and determines how the provider interprets the accompanying `transaction` payload.
+
+#### SignedTransactionParams
+
+```ts
+interface SignedTransactionParams {
+  readonly transaction: Record<string, unknown>;
+}
+```
+
+#### AddChainParams
+
+```ts
+interface AddChainParams {
+  readonly url: string;
+  readonly networkId?: string;
+  readonly name?: string;
+}
+```
+
 ### Public Provider Methods
 
-#### mina_blockHash
+#### `mina_blockHash`
 
-##### Description
-
-Returns the hash of the latest block.
+Returns the hash of the latest block known to the provider.
 
 ##### Parameters
 
-*(none)*
+None.
 
 ##### Returns
 
-`string` - the current block hash
+`string` — the current block hash.
 
 ##### Example
 
 ```json
 // Request
 {
-    "method": "mina_blockHash",
-    "params": []
+  "method": "mina_blockHash"
 }
 
 // Response
 {
-    "result": "3NLeFzJBrAKh4BhpHFcs1DaPFkTKemgBdTY2W1EFYtrHJHfiC96Q"
+  "result": "3NLeFzJBrAKh4BhpHFcs1DaPFkTKemgBdTY2W1EFYtrHJHfiC96Q"
 }
 ```
 
-#### mina_networkId
+#### `mina_networkId`
 
-##### Description
-
-Returns the current network ID.
+Returns the current Mina network identifier.
 
 ##### Parameters
 
-*(none)*
+None.
 
 ##### Returns
 
-`string` - the network ID (e.g., "mina:mainnet", "mina:devnet")
+`string` — the active network ID.
 
 ##### Example
 
 ```json
 // Request
 {
-    "method": "mina_networkId",
-    "params": []
+  "method": "mina_networkId"
 }
 
 // Response
 {
-    "result": "mina:mainnet"
+  "result": "mina:mainnet"
 }
 ```
 
-#### mina_getBalance
+#### `mina_getBalance`
 
-##### Description
-
-Returns the balance of a given account.
+Returns the balance of an account.
 
 ##### Parameters
 
-1. `string` - account public key (address)
-2. `string` (optional) - token ID
+```ts
+interface GetBalanceParams {
+  readonly publicKey: string;
+  readonly tokenId?: string;
+}
+```
 
 ##### Returns
 
-`string` - balance as a string quantity
+`string` — the balance as a string quantity.
 
 ##### Example
 
 ```json
 // Request
 {
-    "method": "mina_getBalance",
-    "params": ["B62qoYJCCwNSGRw73ww5eNCZnKCvjoEtrqr9UxuLnVHamDBEwSXjaw3", "1"]
+  "method": "mina_getBalance",
+  "params": {
+    "publicKey": "B62qoYJCCwNSGRw73ww5eNCZnKCvjoEtrqr9UxuLnVHamDBEwSXjaw3",
+    "tokenId": "1"
+  }
 }
 
 // Response
 {
-    "result": "5000000000"
+  "result": "5000000000"
 }
 ```
 
-#### mina_getTransactionCount
+#### `mina_getTransactionCount`
 
-##### Description
-
-Returns the transaction nonce for a given account.
+Returns the current nonce for an account.
 
 ##### Parameters
 
-1. `string` - account public key (address)
+```ts
+interface GetTransactionCountParams {
+  readonly publicKey: string;
+}
+```
 
 ##### Returns
 
-`string` - nonce as a string quantity
+`string` — the nonce as a string quantity.
 
 ##### Example
 
 ```json
 // Request
 {
-    "method": "mina_getTransactionCount",
-    "params": ["B62qoYJCCwNSGRw73ww5eNCZnKCvjoEtrqr9UxuLnVHamDBEwSXjaw3"]
+  "method": "mina_getTransactionCount",
+  "params": {
+    "publicKey": "B62qoYJCCwNSGRw73ww5eNCZnKCvjoEtrqr9UxuLnVHamDBEwSXjaw3"
+  }
 }
 
 // Response
 {
-    "result": "42"
+  "result": "42"
 }
 ```
 
-#### mina_sendSignedTransaction
+#### `mina_sendSignedTransaction`
 
-##### Description
-
-Submits a signed transaction to the network.
+Submits a previously signed transaction to the network.
 
 ##### Parameters
 
-1. `object` - signed transaction object
+`SignedTransactionParams`
 
 ##### Returns
 
-`string` - transaction hash
+`string` — the transaction hash.
 
 ##### Example
 
 ```json
 // Request
 {
-    "method": "mina_sendSignedTransaction",
-    "params": [{
-        "signature": {
-            "field":"2270917456437054151866310845889777237190541188364956508055930611671093285487",
-            "scalar":"21449516654198770916732742168324673178939547645509705487897779421915836159965"
-        },
-        "input": {
-            "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
-            "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
-            "fee": "10000000",
-            "amount": "1000000000",
-            "nonce": "33",
-            "memo": "Offline Payment",
-            "validUntil": "4294967295"
-        }
-    }]
-}
-
-// Response
-{
-    "result": "5Ju...txhash..."
-}
-```
-
-### Wallet Provider Methods
-
-#### mina_accounts
-
-##### Description
-
-Returns the accounts currently connected to the dApp.
-
-##### Parameters
-
-*(none)*
-
-##### Returns
-
-`array<string>` - list of account public keys
-
-##### Example
-
-```json
-// Request
-{
-    "method": "mina_accounts",
-    "params": []
-}
-
-// Response
-{
-    "result": ["B62q1...", "B62q2..."]
-}
-```
-
-#### mina_requestAccounts
-
-##### Description
-
-Prompts the user to connect accounts.
-
-##### Parameters
-
-*(none)*
-
-##### Returns
-
-`array<string>` - list of connected account public keys
-
-##### Example
-
-```json
-// Request
-{
-    "method": "mina_requestAccounts",
-    "params": []
-}
-
-// Response
-{
-    "result": ["B62q..."]
-}
-```
-
-#### mina_addChain
-
-##### Description
-
-Requests to add a new network configuration.
-
-##### Parameters
-
-1. `object` - chain configuration (including `url`)
-
-##### Returns
-
-`null`
-
-##### Example
-
-```json
-// Request
-{
-    "method": "mina_addChain",
-    "params": [{
-        "url": "https://api.minascan.io/node/devnet/v1/graphql"
-    }]
-}
-
-// Response
-{
-    "result": null
-}
-```
-
-#### mina_switchChain
-
-##### Description
-
-Requests to switch to a different network.
-
-##### Parameters
-
-1. `string` - target network ID
-
-##### Returns
-
-`null`
-
-##### Example
-
-```json
-// Request
-{
-    "method": "mina_switchChain",
-    "params": ["mina:devnet"]
-}
-
-// Response
-{
-    "result": null
-}
-```
-
-#### mina_signTransaction
-
-##### Description
-
-Requests the wallet to sign a transaction without sending it.
-
-##### Parameters
-
-1. `object` - transaction request (of type `TransactionRequest` as used in the reference implementation)
-
-##### Returns
-
-`object` - signed `ZkappCommand` or `Signature`
-
-##### Example
-
-```json
-// Request
-{
-    "method": "mina_signTransaction",
-    "params": [{
+  "method": "mina_sendSignedTransaction",
+  "params": {
+    "transaction": {
+      "signature": {
+        "field": "2270917456437054151866310845889777237190541188364956508055930611671093285487",
+        "scalar": "21449516654198770916732742168324673178939547645509705487897779421915836159965"
+      },
+      "input": {
         "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
         "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
         "fee": "10000000",
@@ -347,64 +333,78 @@ Requests the wallet to sign a transaction without sending it.
         "nonce": "33",
         "memo": "Offline Payment",
         "validUntil": "4294967295"
-    }]
+      }
+    }
+  }
 }
 
 // Response
 {
-    "result": {
-        "field":"2270917456437054151866310845889777237190541188364956508055930611671093285487",
-        "scalar":"21449516654198770916732742168324673178939547645509705487897779421915836159965"
-    }
+  "result": "5Ju...txhash..."
 }
 ```
 
-#### mina_sendTransaction
+### Wallet Provider Methods
 
-##### Description
+#### `mina_accounts`
 
-Requests the wallet to sign and send a transaction.
+Returns the accounts currently connected to the dApp.
 
 ##### Parameters
 
-1. `object` - transaction request, same as for `mina_signTransaction`
+None.
 
 ##### Returns
 
-`string` - transaction hash
+`string[]` — the connected account public keys.
 
 ##### Example
 
 ```json
 // Request
 {
-    "method": "mina_sendTransaction",
-    "params": [{
-        "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
-        "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
-        "fee": "100000000",
-        "amount": "1000000000",
-        "nonce": "33",
-        "memo": "Offline Payment",
-        "validUntil": "4294967295"
-    }]
+  "method": "mina_accounts"
 }
 
 // Response
 {
-    "result": "5Ju...txhash..."
+  "result": ["B62q1...", "B62q2..."]
 }
 ```
 
-#### wallet_revokePermissions
+#### `mina_requestAccounts`
 
-##### Description
-
-Revokes the current connection permissions.
+Prompts the user to connect one or more accounts.
 
 ##### Parameters
 
-*(none)*
+None.
+
+##### Returns
+
+`string[]` — the connected account public keys.
+
+##### Example
+
+```json
+// Request
+{
+  "method": "mina_requestAccounts"
+}
+
+// Response
+{
+  "result": ["B62q..."]
+}
+```
+
+#### `mina_addChain`
+
+Requests that the wallet add a network configuration.
+
+##### Parameters
+
+`AddChainParams`
 
 ##### Returns
 
@@ -415,71 +415,321 @@ Revokes the current connection permissions.
 ```json
 // Request
 {
-    "method": "wallet_revokePermissions",
-    "params": []
+  "method": "mina_addChain",
+  "params": {
+    "url": "https://api.minascan.io/node/devnet/v1/graphql",
+    "networkId": "mina:devnet",
+    "name": "Mina Devnet"
+  }
 }
 
 // Response
 {
-    "result": null
+  "result": null
 }
 ```
 
-## Events
+#### `mina_switchChain`
 
-The provider emits the following events:
+Requests that the wallet switch to another Mina network.
 
-### chainChanged
+##### Parameters
 
-If the network the Provider is connected to changes, it emits the `chainChanged` event.
+```ts
+interface SwitchChainParams {
+  readonly networkId: string;
+}
+```
 
-##### Parameter
+##### Returns
 
-`networkId: string`
+`null`
 
-The new network ID as a string.
+##### Example
 
-### accountsChanged
+```json
+// Request
+{
+  "method": "mina_switchChain",
+  "params": {
+    "networkId": "mina:devnet"
+  }
+}
 
-If the accounts available to the Provider change (i.e., the result of `mina_accounts` would differ), it emits the `accountsChanged` event.
+// Response
+{
+  "result": null
+}
+```
 
-##### Parameter
+#### `mina_signTransaction`
 
-`accounts: array<string>`
+Requests that the wallet sign a transaction without sending it.
 
-An array of account public keys (addresses).
+##### Parameters
 
-### message
+`SignedTransactionParams`
 
-The `message` event is for arbitrary notifications not covered by other events.
+##### Returns
 
-##### Parameter
+A wallet-defined signed transaction representation, such as a signature for payments and delegations or a signed zkApp command for zkApp transactions.
 
-`message: { type: string; data: unknown }`
+##### Example
 
-This can be used for future extensions, such as subscription notifications if supported.
+```json
+// Request
+{
+  "method": "mina_signTransaction",
+  "params": {
+    "transaction": {
+      "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
+      "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
+      "fee": "10000000",
+      "amount": "1000000000",
+      "nonce": "33",
+      "memo": "Offline Payment",
+      "validUntil": "4294967295"
+    }
+  }
+}
+
+// Response
+{
+  "result": {
+    "field": "2270917456437054151866310845889777237190541188364956508055930611671093285487",
+    "scalar": "21449516654198770916732742168324673178939547645509705487897779421915836159965"
+  }
+}
+```
+
+#### `mina_sendTransaction`
+
+Requests that the wallet sign and send a transaction.
+
+##### Parameters
+
+`SendTransactionParams`
+
+##### Returns
+
+`string` — the transaction hash.
+
+##### Example: payment
+
+```json
+// Request
+{
+  "method": "mina_sendTransaction",
+  "params": {
+    "type": "payment",
+    "transaction": {
+      "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
+      "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
+      "fee": "100000000",
+      "amount": "1000000000",
+      "nonce": "33",
+      "memo": "Offline Payment",
+      "validUntil": "4294967295"
+    }
+  }
+}
+
+// Response
+{
+  "result": "5Ju...txhash..."
+}
+```
+
+##### Example: delegation
+
+```json
+// Request
+{
+  "method": "mina_sendTransaction",
+  "params": {
+    "type": "delegation",
+    "transaction": {
+      "to": "B62qdelegate...",
+      "from": "B62qdelegator...",
+      "fee": "100000000",
+      "nonce": "12",
+      "memo": "Delegate stake",
+      "validUntil": "4294967295"
+    }
+  }
+}
+
+// Response
+{
+  "result": "5Ju...txhash..."
+}
+```
+
+##### Example: zkapp
+
+```json
+// Request
+{
+  "method": "mina_sendTransaction",
+  "params": {
+    "type": "zkapp",
+    "transaction": {
+      "transaction": {
+        "zkappCommand": "..."
+      },
+      "feePayer": {
+        "fee": "100000000",
+        "memo": "Execute zkApp"
+      }
+    }
+  }
+}
+
+// Response
+{
+  "result": "5Ju...txhash..."
+}
+```
+
+#### `wallet_revokePermissions`
+
+Revokes the current dApp connection permissions.
+
+##### Parameters
+
+None.
+
+##### Returns
+
+`null`
+
+##### Example
+
+```json
+// Request
+{
+  "method": "wallet_revokePermissions"
+}
+
+// Response
+{
+  "result": null
+}
+```
+
+### Events
+
+A compliant Provider MUST implement `on` and `removeListener` following Node.js `EventEmitter` semantics.
+
+#### `chainChanged`
+
+If the network the Provider is connected to changes, it MUST emit `chainChanged` with:
+
+```ts
+type ChainChangedEvent = string;
+```
+
+The value is the new `networkId`.
+
+#### `accountsChanged`
+
+If the accounts available to the Provider change, it MUST emit `accountsChanged` with:
+
+```ts
+type AccountsChangedEvent = string[];
+```
+
+The value is the new list of connected account public keys.
+
+#### `message`
+
+The `message` event is reserved for arbitrary notifications not covered by other standardized events.
+
+```ts
+interface ProviderMessage {
+  readonly type: string;
+  readonly data: unknown;
+}
+```
+
+### Implementation Requirements
+
+A Provider implementation claiming compliance with this MIP:
+
+- MUST support object-form `params` for all standardized methods.
+- MUST accept omitted `params` or an empty object for methods with no parameters.
+- MUST expose `mina_sendTransaction` with a REQUIRED `type` field in `params`.
+- MUST preserve the semantics of transaction submission across supported transaction types.
+- SHOULD continue to expose non-standard legacy methods only for backwards compatibility and SHOULD document them separately from this MIP-compliant interface.
+
+## Rationale
+
+### Object `params` instead of array `params`
+
+JSON-RPC 2.0 permits parameters to be encoded either by position or by name. This MIP standardizes named-object parameters because Mina provider methods are easier to read, document, validate, and evolve when each argument is explicitly labeled. Object parameters also align better with existing Mina wallet practice, especially where methods naturally take structured inputs rather than short positional argument lists.
+
+Using objects avoids ambiguity in methods that have optional fields, reduces coupling to argument order, and makes it easier for providers to extend internal validation without introducing incompatible positional conventions.
+
+### Explicit `type` for `mina_sendTransaction`
+
+`mina_sendTransaction` covers materially different flows: payments, delegations, and zkApp transactions. Requiring a `type` discriminator makes the transaction intent explicit, avoids inference from partially overlapping payload fields, and improves cross-wallet consistency. This is especially useful for multichain or multi-wallet libraries that need deterministic transaction routing and validation behavior.
+
+### Use of `networkId`
+
+This MIP uses `networkId` terminology instead of `chainId` because current Mina wallet implementations already use that term and because Mina network identifiers are commonly represented as strings such as `mina:mainnet`.
+
+### Minimal scope
+
+The specification intentionally standardizes only a compact set of widely needed methods and events. This keeps adoption friction low while leaving room for future MIPs to define extensions for message signing, subscriptions, advanced chain metadata, or richer wallet capabilities.
+
+## Backwards Compatibility
+
+This MIP is not fully backwards compatible with provider implementations that only support positional-array `params` for the standardized methods defined here. It also adds a required `type` field to `mina_sendTransaction`, which means dApps written against the earlier draft proposal will need to update their request construction.
+
+These incompatibilities are limited to the wallet-provider interface and do not introduce a Mina protocol or consensus change.
+
+To ease migration:
+
+- Wallets MAY temporarily support both legacy array-based requests and the object-based format defined in this MIP.
+- Wallets MAY infer transaction type for legacy callers, but MIP-compliant dApps MUST send the `type` field explicitly for `mina_sendTransaction`.
+- Libraries that abstract wallet differences SHOULD normalize legacy wallet behavior to the object-based format defined by this MIP.
+
+## Test Cases
+
+Conformance testing for this MIP SHOULD include at least the following cases:
+
+1. **No-parameter methods**: verify that methods such as `mina_accounts` and `mina_networkId` succeed when `params` is omitted and when `params` is `{}`.
+2. **Named-parameter methods**: verify that `mina_getBalance`, `mina_getTransactionCount`, `mina_addChain`, and `mina_switchChain` accept object-form `params` and reject malformed parameter types.
+3. **Transaction submission by type**: verify that `mina_sendTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate transaction payload.
+4. **Missing type**: verify that `mina_sendTransaction` rejects requests that omit `type`.
+5. **Unsupported type**: verify that `mina_sendTransaction` rejects values outside `payment`, `delegation`, and `zkapp`.
+6. **Legacy compatibility behavior**: if a wallet chooses to support legacy array-form requests during migration, verify that the legacy behavior is clearly separated from the MIP-compliant interface and does not change the semantics of compliant object-form requests.
+7. **Event emission**: verify that account and network changes emit `accountsChanged` and `chainChanged` respectively with the correct payload shapes.
 
 ## Reference Implementation
 
-The proposed methods and types are directly derived from the TypeScript definitions in the Vimina project:
+The original proposal references the Vimina TypeScript schema as a starting point for the provider surface. A reference implementation can be derived by updating that schema so that all standardized methods use named-object `params`, and by changing `mina_sendTransaction` to require a `type` field alongside the transaction payload.
 
-https://raw.githubusercontent.com/wagmina/vimina/5bdf1a500343a6fdd1bc621109041334d3fd00a8/src/types/jsApiStandard.ts
+Relevant sources include:
 
-This file defines `PublicRpcSchema` and `WalletRpcSchema` as the authoritative source.
+- Vimina provider schema: `src/types/jsApiStandard.ts`
+- Existing wallet implementations such as Auro Wallet and Pallad
+- The original proposal and discussion thread for this MIP
 
-# Compatibility
+## Security Considerations
 
-The current APIs of Auro Wallet, Pallad, and [RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) have been taken into consideration to minimize required changes and ensure a smooth transition and implementation.
+Provider objects are exposed in an untrusted JavaScript environment and MUST be treated as adversarial inputs by wallet implementations.
 
-Current wallets can continue to support both this standard and their existing formats until all zkApps update to the new standard.
+Wallets and providers implementing this MIP SHOULD ensure that:
 
-Additionally, [wagmina](https://github.com/wagmina/wagmina), developed by the author of this proposal, can be used to provide zkApp developers with a consistent interface regardless of the underlying wallet implementation, as demonstrated in [Scaffold Mina](https://github.com/wagmina/scaffold-mina).
+- all request payloads are validated before processing;
+- transaction payloads are validated against the declared `type` and rejected if fields are inconsistent;
+- unsupported methods and malformed parameters fail predictably rather than being silently coerced;
+- permissioned methods such as `mina_requestAccounts`, `mina_signTransaction`, `mina_sendTransaction`, and `wallet_revokePermissions` are gated by explicit user authorization;
+- providers do not expose private key material or other sensitive wallet state to the dApp environment.
 
-# Conclusion
+The `type` discriminator on `mina_sendTransaction` reduces one class of implementation risk by preventing ambiguous transaction interpretation. However, wallets MUST NOT rely on `type` alone; they MUST also validate the transaction body against the rules for the declared type.
 
-Adopting this Mina Provider API standard represents a straightforward yet impactful step toward a more unified and developer-friendly ecosystem. It encourages wallet providers (Auro Wallet, Pallad, and emerging ones) to converge on a common interface.
+## Copyright
 
-**Author:** TheMonkeyCoder  
-**Status:** Draft
-
-Community discussion and collaboration with wallet teams are welcomed to refine and implement this standard as an official MIP.
+Copyright and related rights waived via [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
