@@ -20,8 +20,6 @@ The specification in this proposal is intentionally brief, including only the ne
 
 Mina wallets and provider implementations currently expose different JavaScript APIs, which forces zkApp developers to maintain wallet-specific integration code. This fragmentation increases implementation effort, testing overhead, and the chance of inconsistent behavior across applications.
 
-A standard provider API improves interoperability between wallets and applications, lowers the barrier for new wallet implementations, and gives developers a predictable interface for common tasks such as connecting accounts, querying network state, signing transactions, and submitting transactions.
-
 [RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) established a useful starting point for provider standardization by defining a minimal Mina Provider API. This MIP narrows and extends that approach for Mina wallet interoperability by:
 
 - using `networkId` terminology instead of `chainId` to match current Mina wallet conventions;
@@ -161,8 +159,6 @@ interface SignedTransactionParams {
 ```ts
 interface AddChainParams {
   readonly url: string;
-  readonly networkId?: string;
-  readonly name?: string;
 }
 ```
 
@@ -404,9 +400,7 @@ Requests that the wallet add a network configuration.
 {
   "method": "mina_addChain",
   "params": {
-    "url": "https://api.minascan.io/node/devnet/v1/graphql",
-    "networkId": "mina:devnet",
-    "name": "Mina Devnet"
+    "url": "https://api.minascan.io/node/devnet/v1/graphql"
   }
 }
 
@@ -556,15 +550,13 @@ Requests that the wallet sign and send a transaction.
   "method": "mina_sendTransaction",
   "params": {
     "type": "payment",
-    "transaction": {
-      "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
-      "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
-      "fee": "100000000",
-      "amount": "1000000000",
-      "nonce": "33",
-      "memo": "Offline Payment",
-      "validUntil": "4294967295"
-    }
+    "to": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
+    "from": "B62qpSphT9prqYrJFio82WmV3u29DkbzGprLAM3pZQM2ZEaiiBmyY82",
+    "fee": "100000000",
+    "amount": "1000000000",
+    "nonce": "33",
+    "memo": "Offline Payment",
+    "validUntil": "4294967295"
   }
 }
 
@@ -688,21 +680,7 @@ A Provider implementation claiming compliance with this MIP:
 
 ## Rationale
 
-### Object `params` instead of array `params`
-
-JSON-RPC 2.0 permits parameters to be encoded either by position or by name. This MIP standardizes named-object parameters because Mina provider methods are easier to read, document, validate, and evolve when each argument is explicitly labeled. Object parameters also align better with existing Mina wallet practice, especially where methods naturally take structured inputs rather than short positional argument lists.
-
-Using objects avoids ambiguity in methods that have optional fields, reduces coupling to argument order, and makes it easier for providers to extend internal validation without introducing incompatible positional conventions.
-
-### Explicit `type` for transaction signing and sending
-
-`mina_signTransaction` and `mina_sendTransaction` cover materially different flows: payments, delegations, and zkApp transactions. Requiring a `type` discriminator makes transaction intent explicit, avoids inference from partially overlapping payload fields, and improves cross-wallet consistency. This is especially useful for multichain or multi-wallet libraries that need deterministic transaction routing and validation behavior before either signing or submission.
-
-### Use of `networkId`
-
-This MIP uses `networkId` terminology instead of `chainId` because current Mina wallet implementations already use that term and because Mina network identifiers are commonly represented as strings such as `mina:mainnet`.
-
-### Minimal scope
+A standard provider API improves interoperability between wallets and applications, lowers the barrier for new wallet implementations, and gives developers a predictable interface for common tasks such as connecting accounts, querying network state, signing transactions, and submitting transactions.
 
 The specification intentionally standardizes only a compact set of widely needed methods and events. This keeps adoption friction low while leaving room for future MIPs to define extensions for message signing, subscriptions, advanced chain metadata, or richer wallet capabilities.
 
@@ -717,19 +695,6 @@ To ease migration:
 - Wallets MAY temporarily support both legacy array-based requests and the object-based format defined in this MIP.
 - Wallets MAY infer transaction type for legacy callers, but MIP-compliant dApps MUST send the `type` field explicitly for both `mina_signTransaction` and `mina_sendTransaction`.
 - Libraries that abstract wallet differences SHOULD normalize legacy wallet behavior to the object-based format defined by this MIP.
-
-## Test Cases
-
-Conformance testing for this MIP SHOULD include at least the following cases:
-
-1. **No-parameter methods**: verify that methods such as `mina_accounts` and `mina_networkId` succeed when `params` is omitted and when `params` is `{}`.
-2. **Named-parameter methods**: verify that `mina_getBalance`, `mina_getTransactionCount`, `mina_addChain`, and `mina_switchChain` accept object-form `params` and reject malformed parameter types.
-3. **Transaction signing by type**: verify that `mina_signTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate request shape.
-4. **Transaction submission by type**: verify that `mina_sendTransaction` accepts each supported `type` (`payment`, `delegation`, `zkapp`) with the appropriate request shape.
-5. **Missing type**: verify that both `mina_signTransaction` and `mina_sendTransaction` reject requests that omit `type`.
-6. **Unsupported type**: verify that both methods reject values outside `payment`, `delegation`, and `zkapp`.
-7. **Legacy compatibility behavior**: if a wallet chooses to support legacy array-form requests during migration, verify that the legacy behavior is clearly separated from the MIP-compliant interface and does not change the semantics of compliant object-form requests.
-8. **Event emission**: verify that account and network changes emit `accountsChanged` and `chainChanged` respectively with the correct payload shapes.
 
 ## Security Considerations
 
