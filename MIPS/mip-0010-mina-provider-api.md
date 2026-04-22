@@ -12,7 +12,7 @@ created: 2026-04-22
 
 ## Abstract
 
-This MIP standardizes a Mina Provider API for wallets, account providers, and public providers used by zkApp frontends. The API follows an EIP-1193-style `request` interface and defines a common set of RPC methods and events so applications can integrate with Mina providers through one interoperable surface. In contrast to the earlier proposal version, this MIP standardizes JSON-RPC `params` as named objects rather than positional arrays, and it requires both `mina_signTransaction` and `mina_sendTransaction` requests to include a `type` field identifying whether the transaction is a `payment`, `delegation`, or `zkapp` transaction.
+This MIP standardizes a Mina Provider API for wallets, account providers, and public providers used by zkApp frontends. The API follows an EIP-1193-style `request` interface and defines a common set of RPC methods and events so applications can integrate with Mina providers through one interoperable surface. This MIP introduces a standardized JSON-RPC interface and a typed transaction submission flow for Mina providers.
 
 ## Motivation
 
@@ -22,10 +22,8 @@ A standard provider API improves interoperability between wallets and applicatio
 
 [RFC-0008](https://github.com/MinaFoundation/Core-Grants/blob/main/RFCs/rfc-0008-wallet-provider-api.md) established a useful starting point for provider standardization by defining an EIP-1193-inspired Provider API and permitting JSON-RPC requests to use either arrays or objects for `params`. This MIP narrows and extends that approach for Mina wallet interoperability by:
 
-- standardizing named-object `params` for all methods;
 - using `networkId` terminology instead of `chainId` to match current Mina wallet conventions;
-- including explicit account connection and revocation methods; and
-- requiring a `type` discriminator on `mina_signTransaction` and `mina_sendTransaction` payloads so providers can reliably distinguish `payment`, `delegation`, and `zkapp` flows.
+- including explicit account connection and revocation methods.
 
 These constraints reduce ambiguity for implementers and simplify multichain and multi-wallet support for Mina applications.
 
@@ -713,9 +711,7 @@ interface ProviderMessage {
 
 A Provider implementation claiming compliance with this MIP:
 
-- MUST support object-form `params` for all standardized methods.
 - MUST accept omitted `params` or an empty object for methods with no parameters.
-- MUST expose both `mina_signTransaction` and `mina_sendTransaction` with a REQUIRED `type` field in `params`.
 - MUST preserve the semantics of transaction submission across supported transaction types.
 - SHOULD continue to expose non-standard legacy methods only for backwards compatibility and SHOULD document them separately from this MIP-compliant interface.
 
