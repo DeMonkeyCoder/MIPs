@@ -164,6 +164,14 @@ interface AddChainParams {
 }
 ```
 
+### Provider Method Groups
+
+This MIP distinguishes between Public Provider methods and Wallet Provider methods.
+
+Public Provider methods are network-facing RPC methods that do not require access to user accounts or wallet authorization. They MAY be implemented by public HTTP providers, wallet providers, or other compatible provider implementations. Wallet Providers MAY implement or proxy Public Provider methods for convenience, but dApps MAY also call them through any compatible Public Provider.
+
+Wallet Provider methods require wallet state, user authorization, or access to user accounts. These methods are intended for wallet providers and include account access, permission management, network management, transaction signing, and transaction signing with submission.
+
 ### Public Provider Methods
 
 #### `mina_blockHash`
@@ -639,7 +647,7 @@ None.
 
 ### Events
 
-A compliant Provider MUST implement `on` and `removeListener` following Node.js `EventEmitter` semantics.
+A Wallet Provider MUST implement `on` and `removeListener` for the events defined below. Public Providers MAY implement event subscription where applicable.
 
 #### `chainChanged`
 
